@@ -322,15 +322,54 @@ jobs:
               open_declaration,
           )
 
-          replace_regex(
-              "fs/open.c",
-              r"(^[ \t]*unsigned int lookup_flags = LOOKUP_FOLLOW;[ \t]*\n)",
-              r"\1\n#ifdef CONFIG_KSU_MANUAL_HOOK\n"
-              r"\tksu_handle_faccessat(&dfd, &filename, &mode, NULL);\n"
-              r"#endif\n",
-              expected=1,
-              flags=re.MULTILINE,
+          open_text = load("fs/open.c")
+          faccessat_start = open_text.find("SYSCALL_DEFINE3(faccessat,")
+          if faccessat_start < 0:
+              fail("fs/open.c: faccessat syscall not found")
+
+          faccessat_end = open_text.find(
+              "SYSCALL_DEFINE2(access,",
+              faccessat_start,
           )
+          if faccessat_end < 0:
+              fail("fs/open.c: access syscall not found after faccessat")
+
+          faccessat_segment = open_text[
+              faccessat_start:faccessat_end
+          ]
+
+          faccessat_hook = """\
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+              ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
+          #endif
+          """
+
+          if faccessat_hook.strip() not in faccessat_segment:
+              anchor = "\tunsigned int lookup_flags = LOOKUP_FOLLOW;\n"
+              anchor_count = faccessat_segment.count(anchor)
+
+              if anchor_count != 1:
+                  fail(
+                      "fs/open.c: expected exactly one lookup_flags "
+                      f"anchor inside faccessat, found {anchor_count}"
+                  )
+
+              faccessat_segment = faccessat_segment.replace(
+                  anchor,
+                  anchor + "\n" + faccessat_hook,
+                  1,
+              )
+
+              open_text = (
+                  open_text[:faccessat_start]
+                  + faccessat_segment
+                  + open_text[faccessat_end:]
+              )
+
+              save("fs/open.c", open_text)
+              print("fs/open.c: hooked faccessat")
+          else:
+              print("fs/open.c: faccessat hook already present")
 
           reboot_declaration = """\
           #ifdef CONFIG_KSU_MANUAL_HOOK
@@ -402,6 +441,13 @@ jobs:
               for needle in needles:
                   if needle not in text:
                       fail(f"{path}: required hook missing: {needle}")
+
+          if load("fs/open.c").count(
+              "ksu_handle_faccessat(&dfd, &filename, &mode, NULL);"
+          ) != 1:
+              fail(
+                  "fs/open.c: faccessat hook must appear exactly once"
+              )
 
           print("All required pyxis Linux 4.9 manual hooks were inserted.")
           PY
