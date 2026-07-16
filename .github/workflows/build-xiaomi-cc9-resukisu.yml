@@ -87,12 +87,46 @@ jobs:
             https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh \
             | sh -s -- "${RESUKISU_REF}"
 
-          test -d KernelSU
-          test -L drivers/kernelsu
-          test -f drivers/kernelsu/Kconfig
-          test "$(git -C KernelSU remote get-url origin)" = "${RESUKISU_REPO}"
-          grep -q 'obj-$(CONFIG_KSU) += kernelsu/' drivers/Makefile
-          grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+          echo "Verifying ReSukiSU integration..."
+
+          test -d KernelSU || {
+            echo "ERROR: KernelSU directory was not created."
+            exit 1
+          }
+
+          test -L drivers/kernelsu || {
+            echo "ERROR: drivers/kernelsu symlink was not created."
+            exit 1
+          }
+
+          test -f drivers/kernelsu/Kconfig || {
+            echo "ERROR: drivers/kernelsu/Kconfig is missing."
+            exit 1
+          }
+
+          actual_repo="$(git -C KernelSU remote get-url origin)"
+          actual_repo="${actual_repo%.git}"
+          expected_repo="${RESUKISU_REPO%.git}"
+
+          echo "Actual ReSukiSU repository:   ${actual_repo}"
+          echo "Expected ReSukiSU repository: ${expected_repo}"
+
+          test "${actual_repo}" = "${expected_repo}" || {
+            echo "ERROR: ReSukiSU repository address does not match."
+            exit 1
+          }
+
+          grep -Fq 'obj-$(CONFIG_KSU) += kernelsu/' drivers/Makefile || {
+            echo "ERROR: ReSukiSU entry is missing from drivers/Makefile."
+            exit 1
+          }
+
+          grep -Fq 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || {
+            echo "ERROR: ReSukiSU entry is missing from drivers/Kconfig."
+            exit 1
+          }
+
+          echo "ReSukiSU integration verification passed."
 
           git -C KernelSU rev-parse HEAD | tee "${GITHUB_WORKSPACE}/resukisu-commit.txt"
           git -C KernelSU describe --tags --always --dirty \
