@@ -132,6 +132,16 @@ jobs:
           git -C KernelSU describe --tags --always --dirty \
             | tee "${GITHUB_WORKSPACE}/resukisu-version.txt"
 
+
+      - name: Fix ReSukiSU GCC 4.9 compatibility (set_fixmap_offset return type cast)
+        working-directory: kernel
+        shell: bash
+        run: |
+          set -e
+          sed -i 's/void \*map = set_fixmap_offset/void *map = (void *)set_fixmap_offset/' \
+            drivers/kernelsu/hook/arm64/patch_memory.c
+          echo "Patched patch_memory.c: added (void *) cast to set_fixmap_offset"
+
       - name: Apply ReSukiSU manual hooks for Linux 4.9
         working-directory: kernel
         shell: bash
