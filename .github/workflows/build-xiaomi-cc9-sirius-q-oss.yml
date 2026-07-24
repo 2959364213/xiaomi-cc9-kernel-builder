@@ -3,6 +3,11 @@ name: Build Xiaomi CC9 sirius-q-oss Kernel
 on:
   workflow_dispatch:
     inputs:
+      apply_linux_stable:
+        description: "Update the vendor kernel to Linux 4.9.337"
+        required: true
+        default: true
+        type: boolean
       enable_resukisu:
         description: "Enable ReSukiSU (first boot test should use false)"
         required: true
@@ -21,6 +26,8 @@ env:
   KERNEL_REPO: https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git
   KERNEL_BRANCH: sirius-q-oss
   DEFCONFIG: pyxis_user_defconfig
+  LINUX_STABLE_TARGET: "337"
+  APPLY_LINUX_STABLE: ${{ inputs.apply_linux_stable }}
   RESUKISU_REPO: https://github.com/ReSukiSU/ReSukiSU.git
   RESUKISU_REF: ${{ inputs.resukisu_ref }}
   ENABLE_RESUKISU: ${{ inputs.enable_resukisu }}
@@ -34,6 +41,11 @@ jobs:
       image: ubuntu:20.04
 
     steps:
+      - name: Check out builder scripts
+        uses: actions/checkout@v4
+        with:
+          path: builder
+
       - name: Install build dependencies
         shell: bash
         run: |
@@ -67,6 +79,7 @@ jobs:
             rsync \
             unzip \
             wget \
+            xz-utils \
             zip
 
       - name: Clone Xiaomi kernel source
@@ -80,6 +93,17 @@ jobs:
             --branch "${KERNEL_BRANCH}" \
             "${KERNEL_REPO}" \
             kernel
+
+      - name: Apply Linux 4.9 stable updates
+        if: ${{ inputs.apply_linux_stable }}
+        working-directory: kernel
+        shell: bash
+        run: |
+          set -o pipefail
+
+          bash "${GITHUB_WORKSPACE}/builder/scripts/apply-linux-stable.sh" \
+            "${LINUX_STABLE_TARGET}" \
+            2>&1 | tee "${GITHUB_WORKSPACE}/linux-stable.log"
 
       - name: Integrate ReSukiSU
         if: ${{ inputs.enable_resukisu }}
@@ -574,6 +598,16 @@ jobs:
           mkdir -p artifacts/modules
           mkdir -p artifacts/patches
 
+          cp linux-stable.log artifacts/ 2>/dev/null || true
+
+          if [ -d kernel ]; then
+            find kernel \
+              -path kernel/.git -prune -o \
+              -type f -name '*.rej' \
+              -exec cp -v --parents {} artifacts/patches/ \; \
+              2>/dev/null || true
+          fi
+
           if [ -d kernel/out/arch/arm64/boot ]; then
             find kernel/out/arch/arm64/boot \
               -maxdepth 1 \
@@ -619,6 +653,8 @@ jobs:
             echo "Kernel repository: ${KERNEL_REPO}"
             echo "Kernel branch: ${KERNEL_BRANCH}"
             echo "Defconfig: ${DEFCONFIG}"
+            echo "Linux stable update enabled: ${APPLY_LINUX_STABLE}"
+            echo "Linux stable target: 4.9.${LINUX_STABLE_TARGET}"
             echo "ReSukiSU enabled: ${ENABLE_RESUKISU}"
             echo "ReSukiSU requested ref: ${RESUKISU_REF}"
             echo "GitHub run: ${GITHUB_RUN_NUMBER}"
