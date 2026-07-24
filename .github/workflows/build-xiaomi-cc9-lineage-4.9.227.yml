@@ -86,6 +86,26 @@ jobs:
 
           git -C kernel rev-parse HEAD | tee kernel-commit.txt
 
+      - name: Fix LineageOS GCC forbidden warning
+        working-directory: kernel
+        shell: bash
+        run: |
+          set -e
+
+          file=drivers/gpu/drm/msm/msm_atomic.c
+          declaration='struct msm_drm_notifier notifier_data;'
+
+          test "$(grep -Fc "${declaration}" "${file}")" = "1"
+          sed -i "\\|${declaration}|d" "${file}"
+
+          if grep -Fq "${declaration}" "${file}"; then
+            echo "Failed to remove the unused notifier_data declaration."
+            exit 1
+          fi
+
+          git diff --check
+          git diff -- "${file}"
+
       - name: Clone ARM64 GCC 4.9 toolchain
         shell: bash
         run: |
